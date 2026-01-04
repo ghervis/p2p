@@ -39,25 +39,32 @@
         }
 
         createRoomButton.onclick = () => {
-            peer = new Peer(generateId());
+            console.log('Creating peer...');
+            peer = new Peer(generateId(), {host: 'rendon-smig.onrender.com', path: '/signaling', secure: true});
             peer.on('open', (id) => {
+                console.log('Peer open with id:', id);
                 roomCodeInput.value = id;
                 statusDiv.textContent = 'Room created. Share the code: ' + id;
                 isHost = true;
             });
             peer.on('error', (err) => {
+                console.log('Peer error:', err);
                 statusDiv.textContent = 'Error creating room: ' + err.message;
             });
             peer.on('connection', (conn) => {
+                console.log('Incoming connection');
                 connections.push(conn);
                 conn.on('open', () => {
+                    console.log('Connection open');
                     statusDiv.textContent = 'Peer connected. Total peers: ' + connections.length;
                     enableChat();
                 });
                 conn.on('close', () => {
+                    console.log('Connection closed');
                     statusDiv.textContent = 'Peer disconnected.';
                 });
                 conn.on('data', (data) => {
+                    console.log('Received data:', data);
                     displayMessage('Remote: ' + data);
                     // Broadcast to others
                     connections.forEach(c => {
@@ -73,23 +80,30 @@
                 statusDiv.textContent = 'Enter a room code.';
                 return;
             }
-            peer = new Peer();
+            console.log('Joining room:', code);
+            peer = new Peer(null, {host: 'rendon-smig.onrender.com', path: '/signaling', secure: true});
             peer.on('error', (err) => {
+                console.log('Peer error:', err);
                 statusDiv.textContent = 'Error initializing peer: ' + err.message;
             });
             const conn = peer.connect(code);
+            console.log('Connecting to:', code);
             conn.on('open', () => {
+                console.log('Connection open');
                 statusDiv.textContent = 'Connected to room.';
                 connections.push(conn);
                 enableChat();
             });
             conn.on('close', () => {
+                console.log('Connection closed');
                 statusDiv.textContent = 'Connection closed.';
             });
             conn.on('error', (err) => {
+                console.log('Connection error:', err);
                 statusDiv.textContent = 'Error joining room: ' + err.message;
             });
             conn.on('data', (data) => {
+                console.log('Received data:', data);
                 displayMessage('Remote: ' + data);
             });
         };
