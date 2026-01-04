@@ -67,12 +67,16 @@
         };
 
         connectButton.onclick = async () => {
-            const remoteDesc = JSON.parse(remoteOfferAnswer.value);
-            await pc.setRemoteDescription(remoteDesc);
-            if (remoteDesc.type === 'offer') {
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                offerArea.value = JSON.stringify(pc.localDescription);
+            try {
+                const remoteDesc = JSON.parse(remoteOfferAnswer.value);
+                await pc.setRemoteDescription(remoteDesc);
+                if (remoteDesc.type === 'offer') {
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    offerArea.value = JSON.stringify(pc.localDescription);
+                }
+            } catch (error) {
+                displayMessage('Error connecting: ' + error.message);
             }
         };
 
