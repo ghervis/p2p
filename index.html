@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P Chat</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #chat { border: 1px solid #ccc; height: 300px; overflow-y: scroll; padding: 10px; margin-bottom: 10px; }
+        input, textarea { width: 100%; margin-bottom: 10px; }
+        button { padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Simple P2P Chat</h1>
+    <div id="chat"></div>
+    <input type="text" id="messageInput" placeholder="Type your message...">
+    <button id="sendButton">Send</button>
+    <br><br>
+    <button id="createOffer">Create Offer</button>
+    <textarea id="offerArea" rows="5" placeholder="Offer will appear here"></textarea>
+    <br>
+    <textarea id="remoteOfferAnswer" rows="5" placeholder="Paste remote offer or answer here"></textarea>
+    <button id="connectButton">Connect</button>
+    <script>
+        const chat = document.getElementById('chat');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const createOfferButton = document.getElementById('createOffer');
+        const offerArea = document.getElementById('offerArea');
+        const remoteOfferAnswer = document.getElementById('remoteOfferAnswer');
+        const connectButton = document.getElementById('connectButton');
+
+        let pc = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        });
+        let dc;
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                // In a real app, send candidate to remote peer
+                console.log('ICE candidate:', event.candidate);
+            }
+        };
+
+        pc.ondatachannel = (event) => {
+            dc = event.channel;
+            setupDataChannel();
+        };
+
+        function setupDataChannel() {
+            dc.onopen = () => {
+                console.log('Data channel open');
+                sendButton.disabled = false;
+            };
+            dc.onmessage = (event) => {
+                displayMessage('Remote: ' + event.data);
+            };
+        }
+
+        createOfferButton.onclick = async () => {
+            dc = pc.createDataChannel('chat');
+            setupDataChannel();
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            offerArea.value = JSON.stringify(pc.localDescription);
+        };
+
+        connectButton.onclick = async () => {
+            const remoteDesc = JSON.parse(remoteOfferAnswer.value);
+            await pc.setRemoteDescription(remoteDesc);
+            if (remoteDesc.type === 'offer') {
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                offerArea.value = JSON.stringify(pc.localDescription);
+            }
+        };
+
+        sendButton.onclick = () => {
+            const message = messageInput.value;
+            if (message && dc && dc.readyState === 'open') {
+                dc.send(message);
+                displayMessage('You: ' + message);
+                messageInput.value = '';
+            }
+        };
+
+        function displayMessage(msg) {
+            const p = document.createElement('p');
+            p.textContent = msg;
+            chat.appendChild(p);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        sendButton.disabled = true;
+    </script>
+</body>
+</html>
