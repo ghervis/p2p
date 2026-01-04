@@ -63,8 +63,23 @@
             setupDataChannel();
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
+            await waitForIceGathering();
             offerArea.value = JSON.stringify(pc.localDescription);
         };
+
+        async function waitForIceGathering() {
+            return new Promise((resolve) => {
+                if (pc.iceGatheringState === 'complete') {
+                    resolve();
+                } else {
+                    pc.onicegatheringstatechange = () => {
+                        if (pc.iceGatheringState === 'complete') {
+                            resolve();
+                        }
+                    };
+                }
+            });
+        }
 
         connectButton.onclick = async () => {
             try {
@@ -73,6 +88,7 @@
                 if (remoteDesc.type === 'offer') {
                     const answer = await pc.createAnswer();
                     await pc.setLocalDescription(answer);
+                    await waitForIceGathering();
                     offerArea.value = JSON.stringify(pc.localDescription);
                 }
             } catch (error) {
