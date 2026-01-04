@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>P2P Chat</title>
+    <script src="https://unpkg.com/peerjs@1.5.4/lib/peerjs.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
         #chat { border: 1px solid #ccc; height: 300px; overflow-y: scroll; padding: 10px; margin-bottom: 10px; }
@@ -13,180 +14,85 @@
 </head>
 <body>
     <h1>Simple P2P Chat</h1>
-    <div id="status">Choose an option to start chatting.</div>
+    <div id="status">Enter room code and choose to create or join.</div>
+    <input type="text" id="roomCode" placeholder="Room Code">
     <button id="createRoom">Create Room</button>
     <button id="joinRoom">Join Room</button>
     <div id="chat" style="display:none;"></div>
     <input type="text" id="messageInput" placeholder="Type your message..." style="display:none;">
     <button id="sendButton" style="display:none;">Send</button>
-
-    <dialog id="createDialog">
-        <h2>Create Room</h2>
-        <p id="createStatus">Generating offer...</p>
-        <button id="copyOffer" style="display:none;">Copy Offer</button>
-        <textarea id="answerInput" rows="10" placeholder="Paste answer here" style="display:none;"></textarea>
-        <button id="connectAnswer" style="display:none;">Connect with Answer</button>
-        <button id="closeCreate">Close</button>
-    </dialog>
-
-    <dialog id="joinDialog">
-        <h2>Join Room</h2>
-        <p id="pasteHint">Paste the offer from the room creator:</p>
-        <textarea id="remoteOfferArea" rows="10" placeholder="Paste offer here"></textarea>
-        <br><br>
-        <button id="connectJoin">Connect</button>
-        <p id="joinStatus"></p>
-        <button id="copyAnswer" style="display:none;">Copy Answer</button>
-        <button id="closeJoin">Close</button>
-    </dialog>
     <script>
+        let peer;
+        let connections = [];
+        let isHost = false;
+
         const statusDiv = document.getElementById('status');
+        const roomCodeInput = document.getElementById('roomCode');
         const createRoomButton = document.getElementById('createRoom');
         const joinRoomButton = document.getElementById('joinRoom');
         const chat = document.getElementById('chat');
         const messageInput = document.getElementById('messageInput');
         const sendButton = document.getElementById('sendButton');
-        const createDialog = document.getElementById('createDialog');
-        const copyOfferButton = document.getElementById('copyOffer');
-        const createStatus = document.getElementById('createStatus');
-        const answerInput = document.getElementById('answerInput');
-        const connectAnswerButton = document.getElementById('connectAnswer');
-        const closeCreateButton = document.getElementById('closeCreate');
 
-        let offerJson;
-        const joinDialog = document.getElementById('joinDialog');
-        const pasteHint = document.getElementById('pasteHint');
-        const remoteOfferArea = document.getElementById('remoteOfferArea');
-        const connectJoinButton = document.getElementById('connectJoin');
-        const joinStatus = document.getElementById('joinStatus');
-        const copyAnswerButton = document.getElementById('copyAnswer');
-        const closeJoinButton = document.getElementById('closeJoin');
-
-        let answerJson;
-
-        let pc = new RTCPeerConnection({
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-        });
-        let dc;
-
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                // In a real app, send candidate to remote peer
-                console.log('ICE candidate:', event.candidate);
-            }
-        };
-
-        pc.ondatachannel = (event) => {
-            dc = event.channel;
-            setupDataChannel();
-        };
-
-        function setupDataChannel() {
-            dc.onopen = () => {
-                console.log('Data channel open');
-                sendButton.disabled = false;
-                sendButton.style.display = 'inline';
-                messageInput.style.display = 'inline';
-                chat.style.display = 'block';
-                statusDiv.style.display = 'none';
-                createRoomButton.style.display = 'none';
-                joinRoomButton.style.display = 'none';
-                createDialog.close();
-                joinDialog.close();
-            };
-            dc.onmessage = (event) => {
-                displayMessage('Remote: ' + event.data);
-            };
+        function generateId() {
+            return Math.random().toString(36).substr(2, 9);
         }
 
-        createRoomButton.onclick = async () => {
-            createDialog.showModal();
-            createStatus.textContent = 'Generating offer...';
-            dc = pc.createDataChannel('chat');
-            setupDataChannel();
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            await waitForIceGathering();
-            offerJson = JSON.stringify(pc.localDescription);
-            createStatus.textContent = 'Offer generated. Click Copy Offer to share.';
-            copyOfferButton.style.display = 'inline';
-        };
-
-        copyOfferButton.onclick = () => {
-            navigator.clipboard.writeText(offerJson);
-            createStatus.textContent = 'Offer copied. Paste the answer from the peer below.';
-            copyOfferButton.style.display = 'none';
-            answerInput.style.display = 'block';
-            connectAnswerButton.style.display = 'inline';
-        };
-
-        connectAnswerButton.onclick = async () => {
-            try {
-                const remoteDesc = JSON.parse(answerInput.value);
-                await pc.setRemoteDescription(remoteDesc);
-                createStatus.textContent = 'Connected.';
-            } catch (error) {
-                createStatus.textContent = 'Error: ' + error.message;
-            }
-        };
-
-        closeCreateButton.onclick = () => {
-            createDialog.close();
+        createRoomButton.onclick = () => {
+            peer = new Peer(generateId());
+            peer.on('open', (id) => {
+                roomCodeInput.value = id;
+                statusDiv.textContent = 'Room created. Share the code: ' + id;
+                isHost = true;
+            });
+            peer.on('connection', (conn) => {
+                connections.push(conn);
+                conn.on('open', () => {
+                    statusDiv.textContent = 'Peer connected. Total peers: ' + connections.length;
+                    enableChat();
+                });
+                conn.on('data', (data) => {
+                    displayMessage('Remote: ' + data);
+                    // Broadcast to others
+                    connections.forEach(c => {
+                        if (c !== conn) c.send(data);
+                    });
+                });
+            });
         };
 
         joinRoomButton.onclick = () => {
-            joinDialog.showModal();
-        };
-
-        connectJoinButton.onclick = async () => {
-            try {
-                const remoteDesc = JSON.parse(remoteOfferArea.value);
-                await pc.setRemoteDescription(remoteDesc);
-                if (remoteDesc.type === 'offer') {
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-                    await waitForIceGathering();
-                    pasteHint.style.display = 'none';
-                    remoteOfferArea.style.display = 'none';
-                    connectJoinButton.style.display = 'none';
-                    answerJson = JSON.stringify(pc.localDescription);
-                    copyAnswerButton.style.display = 'inline';
-                    joinStatus.textContent = 'Answer generated. Click Copy Answer to send to creator.';
-                } else {
-                    joinStatus.textContent = 'Connected.';
-                }
-            } catch (error) {
-                joinStatus.textContent = 'Error: ' + error.message;
+            const code = roomCodeInput.value;
+            if (!code) {
+                statusDiv.textContent = 'Enter a room code.';
+                return;
             }
-        };
-
-        copyAnswerButton.onclick = () => {
-            navigator.clipboard.writeText(answerJson);
-            joinStatus.textContent = 'Answer copied. Send it to the room creator.';
-        };
-
-        closeJoinButton.onclick = () => {
-            joinDialog.close();
-        };
-
-        async function waitForIceGathering() {
-            return new Promise((resolve) => {
-                if (pc.iceGatheringState === 'complete') {
-                    resolve();
-                } else {
-                    pc.onicegatheringstatechange = () => {
-                        if (pc.iceGatheringState === 'complete') {
-                            resolve();
-                        }
-                    };
-                }
+            peer = new Peer();
+            const conn = peer.connect(code);
+            conn.on('open', () => {
+                statusDiv.textContent = 'Connected to room.';
+                connections.push(conn);
+                enableChat();
             });
+            conn.on('data', (data) => {
+                displayMessage('Remote: ' + data);
+            });
+        };
+
+        function enableChat() {
+            sendButton.disabled = false;
+            sendButton.style.display = 'inline';
+            messageInput.style.display = 'inline';
+            chat.style.display = 'block';
+            createRoomButton.style.display = 'none';
+            joinRoomButton.style.display = 'none';
+            roomCodeInput.style.display = 'none';
         }
 
         sendButton.onclick = () => {
             const message = messageInput.value;
-            if (message && dc && dc.readyState === 'open') {
-                dc.send(message);
+            if (message && connections.length > 0) {
+                connections.forEach(c => c.send(message));
                 displayMessage('You: ' + message);
                 messageInput.value = '';
             }
