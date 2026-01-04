@@ -13,23 +13,56 @@
 </head>
 <body>
     <h1>Simple P2P Chat</h1>
-    <div id="chat"></div>
-    <input type="text" id="messageInput" placeholder="Type your message...">
-    <button id="sendButton">Send</button>
-    <br><br>
-    <button id="createOffer">Create Offer</button>
-    <textarea id="offerArea" rows="5" placeholder="Offer will appear here"></textarea>
-    <br>
-    <textarea id="remoteOfferAnswer" rows="5" placeholder="Paste remote offer or answer here"></textarea>
-    <button id="connectButton">Connect</button>
+    <div id="status">Choose an option to start chatting.</div>
+    <button id="createRoom">Create Room</button>
+    <button id="joinRoom">Join Room</button>
+    <div id="chat" style="display:none;"></div>
+    <input type="text" id="messageInput" placeholder="Type your message..." style="display:none;">
+    <button id="sendButton" style="display:none;">Send</button>
+
+    <dialog id="createDialog">
+        <h2>Create Room</h2>
+        <p id="createStatus">Generating offer...</p>
+        <button id="copyOffer" style="display:none;">Copy Offer</button>
+        <textarea id="answerInput" rows="10" placeholder="Paste answer here" style="display:none;"></textarea>
+        <button id="connectAnswer" style="display:none;">Connect with Answer</button>
+        <button id="closeCreate">Close</button>
+    </dialog>
+
+    <dialog id="joinDialog">
+        <h2>Join Room</h2>
+        <p id="pasteHint">Paste the offer from the room creator:</p>
+        <textarea id="remoteOfferArea" rows="10" placeholder="Paste offer here"></textarea>
+        <br><br>
+        <button id="connectJoin">Connect</button>
+        <p id="joinStatus"></p>
+        <button id="copyAnswer" style="display:none;">Copy Answer</button>
+        <button id="closeJoin">Close</button>
+    </dialog>
     <script>
+        const statusDiv = document.getElementById('status');
+        const createRoomButton = document.getElementById('createRoom');
+        const joinRoomButton = document.getElementById('joinRoom');
         const chat = document.getElementById('chat');
         const messageInput = document.getElementById('messageInput');
         const sendButton = document.getElementById('sendButton');
-        const createOfferButton = document.getElementById('createOffer');
-        const offerArea = document.getElementById('offerArea');
-        const remoteOfferAnswer = document.getElementById('remoteOfferAnswer');
-        const connectButton = document.getElementById('connectButton');
+        const createDialog = document.getElementById('createDialog');
+        const copyOfferButton = document.getElementById('copyOffer');
+        const createStatus = document.getElementById('createStatus');
+        const answerInput = document.getElementById('answerInput');
+        const connectAnswerButton = document.getElementById('connectAnswer');
+        const closeCreateButton = document.getElementById('closeCreate');
+
+        let offerJson;
+        const joinDialog = document.getElementById('joinDialog');
+        const pasteHint = document.getElementById('pasteHint');
+        const remoteOfferArea = document.getElementById('remoteOfferArea');
+        const connectJoinButton = document.getElementById('connectJoin');
+        const joinStatus = document.getElementById('joinStatus');
+        const copyAnswerButton = document.getElementById('copyAnswer');
+        const closeJoinButton = document.getElementById('closeJoin');
+
+        let answerJson;
 
         let pc = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -52,19 +85,88 @@
             dc.onopen = () => {
                 console.log('Data channel open');
                 sendButton.disabled = false;
+                sendButton.style.display = 'inline';
+                messageInput.style.display = 'inline';
+                chat.style.display = 'block';
+                statusDiv.style.display = 'none';
+                createRoomButton.style.display = 'none';
+                joinRoomButton.style.display = 'none';
+                createDialog.close();
+                joinDialog.close();
             };
             dc.onmessage = (event) => {
                 displayMessage('Remote: ' + event.data);
             };
         }
 
-        createOfferButton.onclick = async () => {
+        createRoomButton.onclick = async () => {
+            createDialog.showModal();
+            createStatus.textContent = 'Generating offer...';
             dc = pc.createDataChannel('chat');
             setupDataChannel();
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             await waitForIceGathering();
-            offerArea.value = JSON.stringify(pc.localDescription);
+            offerJson = JSON.stringify(pc.localDescription);
+            createStatus.textContent = 'Offer generated. Click Copy Offer to share.';
+            copyOfferButton.style.display = 'inline';
+        };
+
+        copyOfferButton.onclick = () => {
+            navigator.clipboard.writeText(offerJson);
+            createStatus.textContent = 'Offer copied. Paste the answer from the peer below.';
+            copyOfferButton.style.display = 'none';
+            answerInput.style.display = 'block';
+            connectAnswerButton.style.display = 'inline';
+        };
+
+        connectAnswerButton.onclick = async () => {
+            try {
+                const remoteDesc = JSON.parse(answerInput.value);
+                await pc.setRemoteDescription(remoteDesc);
+                createStatus.textContent = 'Connected.';
+            } catch (error) {
+                createStatus.textContent = 'Error: ' + error.message;
+            }
+        };
+
+        closeCreateButton.onclick = () => {
+            createDialog.close();
+        };
+
+        joinRoomButton.onclick = () => {
+            joinDialog.showModal();
+        };
+
+        connectJoinButton.onclick = async () => {
+            try {
+                const remoteDesc = JSON.parse(remoteOfferArea.value);
+                await pc.setRemoteDescription(remoteDesc);
+                if (remoteDesc.type === 'offer') {
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    await waitForIceGathering();
+                    pasteHint.style.display = 'none';
+                    remoteOfferArea.style.display = 'none';
+                    connectJoinButton.style.display = 'none';
+                    answerJson = JSON.stringify(pc.localDescription);
+                    copyAnswerButton.style.display = 'inline';
+                    joinStatus.textContent = 'Answer generated. Click Copy Answer to send to creator.';
+                } else {
+                    joinStatus.textContent = 'Connected.';
+                }
+            } catch (error) {
+                joinStatus.textContent = 'Error: ' + error.message;
+            }
+        };
+
+        copyAnswerButton.onclick = () => {
+            navigator.clipboard.writeText(answerJson);
+            joinStatus.textContent = 'Answer copied. Send it to the room creator.';
+        };
+
+        closeJoinButton.onclick = () => {
+            joinDialog.close();
         };
 
         async function waitForIceGathering() {
@@ -80,21 +182,6 @@
                 }
             });
         }
-
-        connectButton.onclick = async () => {
-            try {
-                const remoteDesc = JSON.parse(remoteOfferAnswer.value);
-                await pc.setRemoteDescription(remoteDesc);
-                if (remoteDesc.type === 'offer') {
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-                    await waitForIceGathering();
-                    offerArea.value = JSON.stringify(pc.localDescription);
-                }
-            } catch (error) {
-                displayMessage('Error connecting: ' + error.message);
-            }
-        };
 
         sendButton.onclick = () => {
             const message = messageInput.value;
